@@ -29,10 +29,15 @@ class HorticultureEnvironment:
         self.Light_night = 0.88
         self.d = 3.5
         
+        self.temperature = np.zeros(60)
+        self.light = np.zeros(60)
+        self.humidity = np.zeros(60)
+        
+        
         self.reset()
 
     def reset(self):
-        self.state = np.array([25, 70, 100, 0.1, 0])  # Initial state
+        self.state = np.array([25, 70, 100, 0.1, 0])  # Initial state [Temperature, humidity, light, LAI, day]
         self.hour = 0  # Reset hour 
         self.DMP = 2  # Initial Dry Matter Production
         self.PTI = 10  # Initial Plant Temperature Index
@@ -51,6 +56,45 @@ class HorticultureEnvironment:
         if self.hour >= self.simulation_time:
             self.done = True  # Placeholder for termination condition
         return self.state, reward, self.done, {}
+    
+    def step_variable(self, action_index, variable):
+        """
+        Perform a step in the environment by applying the given action to the specified variable.
+    
+        Parameters:
+        action_index (int): Index of the action to be applied.
+        variable (str): Name of the environmental variable to update.
+    
+        Returns:
+        tuple: Tuple containing the new state, reward, done flag, and additional information.
+        """
+        # Mapping from variable name to function
+        variable_to_function = {
+            'temperature': self.hort_syst_temperature,
+            'humidity': self.hort_syst_humidity,
+            'light': self.hort_syst_light,
+            # Add more mappings if needed
+        }
+    
+        # Check if the specified variable is valid
+        if variable not in variable_to_function:
+            raise ValueError(f"Invalid variable: {variable}")
+    
+        # Get the corresponding function to update the variable
+        update_function = variable_to_function[variable]
+    
+        # Apply the action to update the specified variable
+        action = self.get_action_from_index(action_index)
+        previous_state = np.copy(self.state)  # Store the previous state
+        update_function(self.state, action)
+        reward = self.calculate_reward(previous_state, self.state)
+        self.hour += 1  # Increment hour
+        self.state[4] = (self.hour - 1) // 24 + 1  # Update day
+        if self.hour >= self.simulation_time:
+            self.done = True  # Placeholder for termination condition
+        return self.state, reward, self.done, {}
+
+    
     
     def calculate_reward(self, previous_state, current_state):
         reward = 0
@@ -133,7 +177,84 @@ class HorticultureEnvironment:
             #eTc = ET_c(HETc)
         
         #self.state[3] = LAI
+    
+    def hort_syst_update(self, state, action_index, variable, temperature_actions, light_actions, humidity_actions):
+        """
+        Update the specified environmental variable based on the chosen action.
+    
+        Parameters:
+        state (tuple): Current state of the environment.
+        action_index (int): Index of the action to take.
+        variable (str): Name of the environmental variable to update.
+        temperature_actions (np.ndarray): Array of predefined actions for temperature.
+        light_actions (np.ndarray): Array of predefined actions for light.
+        humidity_actions (np.ndarray): Array of predefined actions for humidity.
+    
+        Returns:
+        None
+        """
+        # Get the day from the state
+        day = int(state[4]) - 1
+        
+        # Update the variable based on the chosen action
+        if variable == 'temperature':
+            action = temperature_actions[action_index]
+            self.temperature_action(action)
+            self.humidity[day]
+            self.light[day]
+        elif variable == 'humidity':
+            action = humidity_actions[action_index]
+            self.humidity_action(action)
+        elif variable == 'light':
+            action = light_actions[action_index]
+            self.light_action(action)
+        else:
+            raise ValueError(f"Invalid variable: {variable}")
+        
+        # Other calculations based on the variable update
+        temperature = state[0]
+        light = state[1]
+        TT = self.thermal_time(temperature)
+        
+        if self.hour % 24 == 0:
+            Delta_PTI = self.delta_PTI(light, TT)
+            self.PTI += Delta_PTI
+            TT = []
+            self.state[3] = self.Leaf_area_index()
+            Delta_DMP = self.dmp_change(light)
+            self.DMP += Delta_DMP
+            Delta_Nup = self.nup_change(light)
+            self.N_uptake += Delta_Nup
 
+    
+    def hort_syst_temperature(self, state, action):
+        
+        # Update state based on the chosen action
+        #temperature_action, humidity_action, light_action = self.get_action_from_index(action)
+        day = int(self.state[4]) - 1
+        self.temperature_action(action)
+        self.humidity[day]
+        self.light[day]
+        
+        temperature = state[0]
+        light = state[1]
+        #relative_humidity = state[2]
+        
+        TT = self.thermal_time(temperature)
+        #hourly_evapotranspiration = self.ETc(light, temperature, relative_humidity, self.hour)
+        
+        if self.hour % 24 ==0:
+            Delta_PTI = self.delta_PTI(light, TT)
+            self.PTI += Delta_PTI
+            TT = []
+            self.state[3] = self.Leaf_area_index()
+            Delta_DMP = self.dmp_change(light)
+            self.DMP += Delta_DMP
+            Delta_Nup = self.nup_change(light)
+            self.N_uptake += Delta_Nup
+            #eTc = ET_c(HETc)
+        
+        #self.state[3] = LAI
     
     def get_action_from_index(self, action_index):
         """
@@ -325,43 +446,77 @@ class QLearningAgent:
         day_value = int(state[4])  # Assuming state[4] represents the day directly
     
         # Calculate index using the provided bins
-        x = temperature_index * (len(self.light_bins) * len(self.humidity_bins) * len(self.LAI_bins) * 60) + \
-            light_index * (len(self.humidity_bins) * len(self.LAI_bins) * 60) + \
-            humidity_index * (len(self.LAI_bins) * 60) + \
-            LAI_index * 60 + \
-            day_value - 1  # Subtract 1 to adjust for 0-based indexing in Python
+        # Initialize index to 1 to prevent the entire index from being zero
+        x = 1
     
+        # Calculate index using the provided bins
+        x *= temperature_index + 1  # Adding 1 to ensure it's not zero
+        x *= light_index + 1       # Adding 1 to ensure it's not zero
+        x *= humidity_index + 1    # Adding 1 to ensure it's not zero
+        x *= LAI_index + 1         # Adding 1 to ensure it's not zero
+        x *= day_value + 1             # Day value can be zero, so no need to add 1
+        print(x)
         return x
 
 
     def discretize(self, value, bins):
         """
         Discretize a continuous value into a bin index.
-
+    
         Parameters:
         value (float): Value to discretize.
         bins (list): List of bin edges.
-
+    
         Returns:
         int: Index of the bin that value belongs to.
         """
+        if value < bins[0]:
+            return 0  # Value is below the range, return the index of the first bin
+        
+        if value >= bins[-1]:
+            return len(bins) - 2  # Value is above or equal to the range, return the index of the last bin
+    
         for i in range(len(bins) - 1):
             if bins[i] <= value < bins[i + 1]:
                 return i
-        # If value is outside the defined bins, return the index of the last bin
-        return len(bins) - 2
+    
+    # If value is within the defined bins, return the corresponding index
+
 
 
 temperature_bins = [10, 15, 20, 25, 30, 35, 40]  # Define bins for temperature
-light_bins = [0, 10, 20, 30, 40, 50]  # Define bins for light
+light_bins = [0, 20, 40, 60, 80, 100]  # Define bins for light
 humidity_bins = [0, 20, 40, 60, 80, 100]  # Define bins for humidity
 LAI_bins = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5]  # Define bins for LAI
 
+
+
 num_actions = 27
-num_states = 2200*60   #To be calculated exactly
+num_states = 81000   #To be calculated exactly
 
 agent = QLearningAgent(num_actions, num_states, temperature_bins, light_bins, humidity_bins, LAI_bins)
+agent.epsilon = 0.1
 
+# Calculate the number of states for each variable
+num_temperature_states = len(agent.temperature_bins) - 1
+num_light_states = len(agent.light_bins) - 1
+num_humidity_states = len(agent.humidity_bins) - 1
+num_LAI_states = len(agent.LAI_bins) - 1
+num_days = 60  # Assuming each day is a unique state
+
+# Calculate the total number of states
+total_states = (
+    num_temperature_states *
+    num_light_states *
+    num_humidity_states *
+    num_LAI_states *
+    num_days
+)
+
+
+
+
+print("Total number of states:", total_states)
 
 # Create an instance of the environment
 env = HorticultureEnvironment()
@@ -408,7 +563,7 @@ def training_loop_1():
 
         cumulative_rewards.append(total_reward)
         # Print total reward for the episode
-        print(f"Episode {episode + 1}, Total LAI: {env.state[3]}")
+        #print(f"Episode {episode + 1}, Total LAI: {env.state[3]}")
         
         # Print episode number every 100 episodes
         if (episode + 1) % 100 == 0:
@@ -506,6 +661,41 @@ def training_loop_3():
         if (episode + 1) % epsilon_decrement_episodes == 0 and agent.epsilon > min_epsilon:
             agent.epsilon = max(agent.epsilon - epsilon_decrement_value, min_epsilon)
             print(f"Epsilon decremented to {agent.epsilon}")
+        
+        # Print episode number every 100 episodes
+        if (episode + 1) % 100 == 0:
+            print(f"Episode {episode + 1}/{num_episodes}")
+
+def training_loop_4():
+    for episode in range(num_episodes):
+        env.reset()
+        total_reward = 0
+        
+        state = env.state
+        
+        while True:
+            # Choose an action
+            action = agent.select_action(state)
+           
+
+            # Take the chosen action and observe the new state and reward
+            next_state, reward, done, _ = env.step_temperature(action)
+
+            # Update the Q-table
+            agent.update_q_table(env.state, action, reward, next_state)
+
+            total_reward += reward
+            state = next_state
+            
+            if done:
+                break
+        
+        Leaf_area_index_training.append(env.state[3])
+            
+
+        cumulative_rewards.append(total_reward)
+        # Print total reward for the episode
+        #print(f"Episode {episode + 1}, Total LAI: {env.state[3]}")
         
         # Print episode number every 100 episodes
         if (episode + 1) % 100 == 0:

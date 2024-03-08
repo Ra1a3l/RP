@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Define the state and action spaces
 num_states = 6  # Number of environmental parameters
@@ -6,8 +7,8 @@ num_actions = 5  # Number of actions (setting light, temperature, humidity, pH, 
 
 # Define the action space ranges and granularity
 action_ranges = [
-    (0, 100),  # Light intensity (arbitrary units)
-    (20, 30),   # Temperature (°C)
+    (100, 90),  # Light intensity (arbitrary units)
+    (21, 21),   # Temperature (°C)
     (40, 60),   # Relative humidity (%)
     (5.5, 6.5), # pH
     (0.5, 1.5)  # Electrical conductivity (mS/cm)
@@ -26,10 +27,10 @@ state_ranges = [
 ]
 
 # Initialize state variables
-DMP = 2  # Initial Dry Matter Production
-PTI = 10  # Initial Plant Temperature Index
+DMP = 0.1  # Initial Dry Matter Production
+PTI = 0.1  # Initial Plant Temperature Index
 N_uptake = 0.1
-LAI = 1
+LAI = 0.1
 HETc = []
 
 # Parameters
@@ -110,9 +111,9 @@ def hort_syst(state, action, hour):
     
     light = action[0]
     temperature = action[1]
-    relative_humidity = action[2]
-    ph = action[3]
-    ec = action[4]
+    relative_humidity = 7
+    ph = 7
+    ec = 7
     
     TT = thermal_time(temperature)
     #hourly_evapotranspiration = ETc(light, temperature, relative_humidity, hour)
@@ -138,49 +139,134 @@ def hort_syst(state, action, hour):
 
 
 
-def choose_action():
+def choose_action(hour):
     """
     Choose an action by setting each of its components within the specified range.
 
     Returns:
         list: Chosen action with components set within the specified range.
     """
-    chosen_action = []
+    chosen_action = [0,0]
 
+    # Set light intensity based on day/night cycle
+    if 0 <= hour < 24:  # Daytime
+        chosen_action[0] = 100
+    else:  # Nighttime
+        light_range = [0, 0]  # No light during the night
+        chosen_action[0] = 0
+    
+    # Set temperature based on day/night cycle
+    if 0 <= hour < 20:  # Daytime
+        temperature_range = [18.3, 25]  # Temperature range during the day
+        chosen_action[1] = 25
+    else:  # Nighttime
+        temperature_range = [12.7, 18.3]  # Temperature range during the night
+        chosen_action[1] = 13
+    '''
     for i in range(len(action_ranges)):
-        # Generate a random value within the specified range
-        value = np.random.uniform(action_ranges[i][0], action_ranges[i][1])
-
+        if i == 0:  # Light intensity
+            value = np.random.uniform(light_range[0], light_range[1])
+        elif i == 1:  # Temperature
+            value = np.random.uniform(temperature_range[0], temperature_range[1])
+        else:  # Other actions
+            value = np.random.uniform(action_ranges[i][0], action_ranges[i][1])
+            '''
         # Adjust the value to match the specified granularity
-        value = round(value / action_granularity[i]) * action_granularity[i]
+        #value = round(value / action_granularity[i]) * action_granularity[i]
 
         # Append the adjusted value to the chosen action
-        chosen_action.append(value)
+        #chosen_action.append(value)
 
     return chosen_action
 
+
+
+
+# Initialize lists to store data for plotting
+hours = []  # New list to store hours
+LAI_values = []
+temperature_values = []
+light_values = []
+
 # Define the simulation environment
 def simulate_environment(current_state, simulation_duration):
-    # Simulate the environment (replace this with your actual simulation logic)
-    # For simplicity, let's randomly generate the next state and reward
-    
-    duration_hours = 24 * simulation_duration
+    # Simulate the environment
     next_state = current_state  # Initialize next_state with the current state
+    for day in range(1, simulation_duration + 1):  # Iterate over each day
+        for hour in range(24):  # Simulate each hour of the day
+            chosen_action = choose_action(hour)  # Choose a new action for each hour
+            next_state = hort_syst(next_state, chosen_action, hour)
+            
+            # Collect data for plotting (appending values each hour)
+            hours.append(hour + (day - 1) * 24)  # Adjust hour for multiple days
+            LAI_values.append(next_state[0][-1])  # Append the LAI value
+            temperature_values.append(next_state[0][2])  # Append the temperature value
+            light_values.append(next_state[0][4])  # Append the light value
     
-    for i in range(1, duration_hours + 1):  # Start the loop from 1
-        chosen_action = choose_action()  # Choose a new action for each iteration
-        next_state = hort_syst(next_state, chosen_action, i)
-    
-    reward = np.random.uniform(0, 1)
+    reward = np.random.uniform(0, 1)  # Calculate the reward (not used for plotting)
     return next_state, reward
+
 
 
 # Example usage of the environment
 initial_state = [7, 1, 25, 60, 50, 1]  # Initial state (replace with actual initial state)
-simulation_duration = 60
+simulation_duration = 120
 
 next_state, reward = simulate_environment(initial_state, simulation_duration)
 
+# Plot the graphs
+plt.figure(figsize=(12, 8))
+
+# Plot LAI vs Hours
+plt.subplot(3, 1, 1)
+plt.plot(hours, LAI_values, color='green')
+plt.xlabel('Hours')
+plt.ylabel('LAI')
+plt.title('Leaf Area Index (LAI) vs Hours')
+
+# Plot Temperature vs Hours
+plt.subplot(3, 1, 2)
+plt.plot(hours, temperature_values, color='blue')
+plt.xlabel('Hours')
+plt.ylabel('Temperature (°C)')
+plt.title('Temperature vs Hours')
+
+# Plot Light vs Hours
+plt.subplot(3, 1, 3)
+plt.plot(hours, light_values, color='orange')
+plt.xlabel('Hours')
+plt.ylabel('Light Intensity')
+plt.title('Light Intensity vs Hours')
+
+# Adjust layout to prevent overlap
+plt.tight_layout()
+
+# Show the plots
+plt.show()
+# Plot the graphs
+#plt.figure(figsize=(12, 8))
+'''
+# Plot LAI vs Days
+plt.subplot(3, 1, 1)
+plt.plot(days, LAI_values, color='green')
+plt.xlabel('Days')
+plt.ylabel('LAI')
+plt.title('Leaf Area Index (LAI) vs Days')
+
+# Plot Temperature vs Days
+plt.subplot(3, 1, 2)
+plt.plot(days, temperature_values, color='blue')
+plt.xlabel('Days')
+plt.ylabel('Temperature (°C)')
+plt.title('Temperature vs Days')
+
+# Plot Light vs Days
+plt.subplot(3, 1, 3)
+plt.plot(days, light_values, color='orange')
+plt.xlabel('Days')
+plt.ylabel('Light Intensity')
+plt.title('Light Intensity vs Days')
+'''
 # Print the results
 print("Simulation Results:")
 print(f"{'='*20}\n")

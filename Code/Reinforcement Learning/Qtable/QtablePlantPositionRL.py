@@ -224,7 +224,7 @@ env = RoboticArmEnvironment(num_positions=5, num_plants=8)
 agent = QLearningAgent(num_actions=4, num_arm_positions=5, num_plants=8)
 
 # Training loop
-num_episodes = 10000
+num_episodes = 1000
 cumulative_rewards = []
 # Calculate the number of steps taken per episode
 steps_taken = []
